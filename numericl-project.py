@@ -55,11 +55,10 @@ app = dash.Dash(__name__)
 # ==========================
 app.layout = html.Div(style={'backgroundColor': '#111111', 'color': 'white', 'font-family':'Arial'}, children=[
     html.H1("🚗 Car Acceleration Simulator", style={'textAlign':'center'}),
-    
+
     html.Div([
         html.Div([
             html.H3("Simulation Parameters"),
-            
             html.Div([
                 html.Label("Car mass (kg)"),
                 dcc.Input(id='mass', type='number', value=1400.0, style={'width':'100%'}),
@@ -85,14 +84,20 @@ app.layout = html.Div(style={'backgroundColor': '#111111', 'color': 'white', 'fo
                 dcc.Input(id='dt_ref', type='number', value=1e-4, style={'width':'100%'}),
                 html.Label("dt list (comma separated)"),
                 dcc.Input(id='dt_list', type='text', value="0.5,0.2,0.1,0.05,0.02", style={'width':'100%'}),
-                
                 html.Button('Run Simulation', id='run-btn', n_clicks=0, style={'marginTop':'10px', 'width':'100%'})
             ], style={'display':'grid', 'gap':'10px'})
         ], style={'padding':'10px', 'backgroundColor':'#222222', 'borderRadius':'10px', 'width':'350px'}),
-        
+
         html.Div([
             html.H3("Results"),
-            html.Div(id='text-output', style={'whiteSpace': 'pre-line', 'backgroundColor':'#222222', 'padding':'10px', 'borderRadius':'10px', 'marginBottom':'10px'}),
+            html.Pre(id='text-output', style={
+                'color': 'white',
+                'backgroundColor':'#222222',
+                'padding':'10px',
+                'borderRadius':'10px',
+                'font-family':'monospace'
+            }),  # <-- COMMA added
+
             html.H3("Velocity Curves"),
             dcc.Graph(id='velocity-plot', style={'height':'400px'}),
             html.H3("Error vs dt (log-log)"),
@@ -142,7 +147,7 @@ def update_sim(n_clicks, m, Cd, A, rho, Crr, P_max, F_max, T, v0, x0, dt_ref, dt
             v_sol = sol[:,0]
             v_ref_at_t = np.interp(t, t_ref, v_ref)
             err = np.sqrt(np.mean((v_sol - v_ref_at_t)**2))
-            errors[name].append(err)
+            errors[name].append(err * 1e6)  # μm/s
 
     # Velocity plot (last dt)
     t = np.arange(0, T+dt_list[-1], dt_list[-1])
@@ -162,15 +167,27 @@ def update_sim(n_clicks, m, Cd, A, rho, Crr, P_max, F_max, T, v0, x0, dt_ref, dt
     for name in errors:
         fig_err.add_trace(go.Scatter(x=dt_list, y=errors[name], mode='lines+markers', name=name))
     fig_err.update_layout(
-        xaxis_title="dt (s)", yaxis_title="L2 Error",
+        xaxis_title="dt (s)", yaxis_title="L2 Error (μm/s)",
         title="Error vs dt (log-log)", xaxis_type="log", yaxis_type="log",
         plot_bgcolor='#111111', paper_bgcolor='#111111', font_color='white'
     )
 
     # Text output
-    text_lines = ["dt\tEuler\t\tHeun\t\tRK4"]
+    text_lines = ["dt      Euler      Heun      RK4 (log10 L2 error)"]
     for i, dt in enumerate(dt_list):
-        text_lines.append(f"{dt:.3f}\t{errors['Euler'][i]:.3e}\t{errors['Heun'][i]:.3e}\t{errors['RK4'][i]:.3e}")
+        vals = [errors[name][i] for name, _ in methods]
+        vals_log = [np.log10(v) for v in vals]
+        best_idx = np.argmin(vals_log)
+
+        line = f"{dt:<7.3f}"
+        for j, val in enumerate(vals_log):
+            if j == best_idx:
+                line += f"{val:>12.2f}*"
+            else:
+                line += f"{val:>12.2f}"
+        text_lines.append(line)
+
+    # Time to 100 km/h
     v_target = 27.78
     idx = np.argmax(v_ref >= v_target)
     if v_ref[idx] >= v_target:
@@ -185,4 +202,5 @@ def update_sim(n_clicks, m, Cd, A, rho, Crr, P_max, F_max, T, v0, x0, dt_ref, dt
 # ==========================
 if __name__ == '__main__':
     app.run(debug=True)
+
 
